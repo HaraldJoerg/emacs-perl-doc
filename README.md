@@ -29,8 +29,6 @@ The user visible benefits over the other formats are:
    and resolve to POD documentation on your system, no web server required.
  * Makes use of Emacs faces: variable-pitch font for text,
    fixed-pitch for code, italics for, well, italics
- * Uses the buffer's full width and can also be used with
-   narrow buffers
 
 ## Installation and Configuration
 

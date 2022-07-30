@@ -10,7 +10,7 @@
 ;; Keywords: languages
 ;; URL: https://github.com/HaraldJoerg/perl-doc
 
-;; Package-Requires: ((emacs "28"))
+;; Package-Requires: ((emacs "27"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -62,9 +62,6 @@
 ;;  * Makes use of Emacs faces: variable-pitch font for text,
 ;;    fixed-pitch for code, italics for, well, italics
 ;;
-;;  * Uses the buffer's full width and can also be used with
-;;    narrow buffers
-;;
 ;; TODO list
 ;;
 ;;  * Documentation on Perl variables is yet to be implemented.
@@ -75,13 +72,21 @@
 
 ;;; Code:
 
+;;; Compatibility with older Emacs versions
+;; Available in Emacs 28: format-prompt
+(defalias 'perl-doc--format-prompt
+  (if (fboundp 'format-prompt) 'format-prompt
+    (lambda (msg default)
+      (if default (format "%s (default %s): " msg default)
+	(concat msg ": ")))))
+
 ;; We use some features from cperl-mode:
-;;  * cperl--format-prompt : A compatibility function for Emacs < 28
 ;;  * cperl-word-at-point  : Finding Perl syntax elements
 ;;  * cperl-short-docs     : Tell functions from modules (for use with -f)
 
 (require 'cperl-mode)
 (require 'shr)
+(require 'face-remap)
 
 (defcustom perl-doc-pod2html-program "pod2html"
   "Path to the shell command pod2html."
@@ -95,18 +100,33 @@
   :group 'perl-doc
   :version 28)
 
-(defvar perl-doc-shr-map
+(defvar perl-doc-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [?\t] 'shr-next-link)
-    (define-key map [?\M-\t] 'shr-previous-link)
+    (set-keymap-parent map
+      (make-composed-keymap button-buffer-map special-mode-map))
     (define-key map [follow-link] 'mouse-face)
     (define-key map [mouse-2] 'perl-doc-browse-url)
     (define-key map "\r" 'perl-doc-browse-url)
-    (define-key map "q" 'bury-buffer)
-    (define-key map (kbd "SPC") 'scroll-up-command)
     map)
   "A keymap to allow following links in perldoc buffers.")
 
+(define-derived-mode perl-doc-mode special-mode "perl-doc"
+  "A mode for displaying Perl documentation.
+The following key bindings are currently in effect in the buffer:
+\\{perl-doc-mode-map}
+ ..."
+  :interactive nil
+  (setq buffer-auto-save-file-name nil)
+  (buffer-disable-undo)
+  (auto-fill-mode -1)
+  (add-hook 'window-size-change-functions #'perl-doc--auto-refresh nil t)
+  (set-buffer-modified-p nil)
+  (setq-local imenu-prev-index-position-function
+	      #'perl-doc--prev-index-position)
+  (setq-local imenu-extract-index-name-function
+	      #'perl-doc--extract-index-name)
+  )
+  
 (defun perl-doc-goto-section (section)
   "Find SECTION in the current buffer.
 There is no precise indicator for SECTION in shr-generated
@@ -276,6 +296,7 @@ which seem to work, at least, with some formatters."
 (defvar-local perl-doc-base nil)
 (defvar-local perl-doc-current-word nil)
 (defvar-local perl-doc-current-section nil)
+(defvar-local perl-doc-text-scale nil)
 
 (defun perl-doc (word &optional section)
   "Get Perl documentation like the perldoc command.
@@ -283,7 +304,7 @@ Does better formatting than man pages, including hyperlinks."
   (interactive
    (let* ((default (cperl-word-at-point))
 	 (read (read-string
-		(cperl--format-prompt "Find doc for Perl function" default))))
+		(perl-doc--format-prompt "Find doc for Perl topic" default))))
      (list (if (equal read "")
 	      default
 	    read))))
@@ -299,7 +320,7 @@ Does better formatting than man pages, including hyperlinks."
 				 (substring-no-properties word)
 				 "*")))
     (if (get-buffer perldoc-buffer)
-	(switch-to-buffer perldoc-buffer)
+	(pop-to-buffer perldoc-buffer)
       (with-temp-buffer
 	;; for diagnostics comment out the previous line, and
 	;; uncomment the next.  This makes the intermediate buffer
@@ -322,24 +343,45 @@ Does better formatting than man pages, including hyperlinks."
 	(shr-render-buffer (current-buffer))) ; this pops to buffer "*html*"
       (switch-to-buffer "*html*") ; just to be sure
       (rename-buffer perldoc-buffer t)
-      (put-text-property (point-min) (point-max)
-			 'keymap perl-doc-shr-map)
-      (if is-func
-	  (setq-local perl-doc-base "perlfunc")
-	(setq-local perl-doc-base nil))
-      (set-buffer-modified-p nil)
-      (read-only-mode))
+      ;; Remove shr's keymap for links which would shadow our mode's keymap
+      (remove-text-properties (point-min) (point-max) '(keymap nil))
+      ;; FIXME: This kills all buffer-local variables
+      (perl-doc-mode)
+      (when perl-doc-text-scale
+	(setq-local text-scale-mode-amount perl-doc-text-scale)
+	(text-scale-mode nil)
+	))
     (when section
       (perl-doc-goto-section section))
     (setq-local revert-buffer-function #'perl-doc--refresh
+		perl-doc-base (if is-func "perlfunc" nil)
 		perl-doc-current-word word
 		perl-doc-current-section section)))
 
-(defun perl-doc--refresh (_ignore-auto _noconfirm)
+(defun perl-doc--refresh (&optional _ignore-auto _noconfirm)
   "Refresh the current piece of documentation."
-  (rename-buffer "*html*" t)
-  (let ((inhibit-read-only t))
-    (perl-doc perl-doc-current-word perl-doc-current-section)))
+  (when (string-equal major-mode "perl-doc-mode")
+    (rename-buffer "*html*" t) ; ... so that shr re-uses this buffer
+    (let ((inhibit-read-only t)
+	  (position (point))
+	  (scale (if (and (boundp 'text-scale-mode) text-scale-mode)
+		     text-scale-mode-amount
+		   nil)))
+      (perl-doc perl-doc-current-word perl-doc-current-section)
+      (goto-char position)
+      (when scale
+	(setq-local text-scale-mode-amount scale)
+	(text-scale-mode nil)))))
+
+(defvar perl-doc--window-size-change-timer nil)
+
+(defun perl-doc--auto-refresh (window)
+  "Reformat the page after a change of the window size"
+  (when (window-live-p window)
+    (when (timerp perl-doc--window-size-change-timer)
+      (cancel-timer perl-doc--window-size-change-timer))
+    (setq perl-doc--window-size-change-timer
+          (run-with-idle-timer 1 nil #'perl-doc--refresh))))
 
 (defun perl-doc-browse-url ()
   "Browse the URL at point, using either perldoc or `shr-browse-url'.
@@ -376,5 +418,78 @@ browse-url."
        (t
 	(shr-browse-url))))))
 
+;;; perl-doc-mode Index functions
+
+(defvar perl-doc--heading-face nil
+  "FIXME: Das werden wir noch los"
+  )
+
+(defun perl-doc--find-heading ()
+  "Find the next heading"
+  (interactive)
+  (let (heading-start-match ; match object where the heading starts
+	heading-end-match   ; match object after the heading
+	from		    ; Start position of the heading
+	to)		    ; End position of the heading
+    (setq heading-start-match
+	  (text-property-search-forward 'face
+					t ; Any heading will do
+					#'perl-doc--heading-face-p))
+    (setq from (prop-match-beginning heading-start-match))
+    (setq heading-end-match
+	  (text-property-search-forward 'face
+					perl-doc--heading-face
+					#'perl-doc--heading-face-end-p))
+    (setq to (prop-match-beginning heading-end-match))
+    (buffer-substring-no-properties from to)
+    ))
+
+(defun perl-doc--prev-index-position ()
+  "Find the previous index position.
+To be used as `imenu-prev-index-position-function'."
+  (let (heading-start-match ; match object where the heading starts
+	heading-end-match)  ; match object after the heading
+    (setq heading-end-match
+	  (text-property-search-backward 'face
+					 t ; Any heading will do
+					 #'perl-doc--heading-face-p))
+    (when heading-end-match
+      (setq heading-start-match
+	    (text-property-search-backward 'face
+					   perl-doc--heading-face
+					   #'perl-doc--heading-face-end-p))
+      (goto-char (prop-match-end heading-start-match))
+      (skip-syntax-forward "-")		; sometimes from points to NL
+      (point)
+      )))
+
+(defun perl-doc--extract-index-name ()
+  "Find the index name starting at point.
+To be used as `imenu-extract-index-name-function'."
+  (save-excursion
+    (perl-doc--find-heading)))
+
+(defun perl-doc--faces-heading-level (faces)
+  "Check whether a list of FACES contains a heading and return its level.
+Return nil if the list contains no face marking a heading."
+  (let (level)
+    (dolist (face faces level)
+      (let ((name (face-name face)))
+	(when (string-match (rx "shr-h" (group digit)) name)
+	  (setq perl-doc--heading-face face)
+	  (setq level (match-string-no-properties 1 name)))))))
+
+(defun perl-doc--heading-face-p (_ got)
+  "Check whether we GOT a heading value in the face we found.
+We don't care which heading, therefore the expected value (first
+ in the parameter list) is ignored."
+  (let ((level (perl-doc--faces-heading-level (ensure-list got))))
+    (and level (string-match (rx digit) level))
+    ))
+
+(defun perl-doc--heading-face-end-p (expected got)
+  "Find the first character where the face EXPECTED is not in GOT."
+  (not (member expected (ensure-list got))))
+ 
 (provide 'perl-doc)
 ;;; perldoc.el ends here
