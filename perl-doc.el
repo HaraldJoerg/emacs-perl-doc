@@ -64,8 +64,6 @@
 ;;
 ;; TODO list
 ;;
-;;  * Documentation on Perl variables is yet to be implemented.
-;;
 ;;  * The regex mechanism in `perl-doc--process-links` is a hack.  The
 ;;    author wrote this before he learned about rx and always meant to
 ;;    rewrite it in rx notation, but well, tuits.
@@ -91,14 +89,20 @@
 (defcustom perl-doc-pod2html-program "pod2html"
   "Path to the shell command pod2html."
   :type 'file
-  :group 'perl-doc
-  :version 28)
+  :group 'perl-doc)
 
 (defcustom perl-doc-perldoc-program "perldoc"
   "Path to the shell command perldoc."
   :type 'file
-  :group 'perl-doc
-  :version 28)
+  :group 'perl-doc)
+
+(defvar perl-doc--debug nil
+  "If non-nil, unrecognized POD links are reported to the message buffer.
+This is only relevant for developers, not for users.")
+
+;; Make elint-current-buffer happy
+(defvar button-buffer-map) 		; in button.el
+(defvar special-mode-map)		; in simple.el
 
 (defvar perl-doc-mode-map
   (let ((map (make-sparse-keymap)))
@@ -113,19 +117,20 @@
 (define-derived-mode perl-doc-mode special-mode "perl-doc"
   "A mode for displaying Perl documentation.
 The following key bindings are currently in effect in the buffer:
-\\{perl-doc-mode-map}
- ..."
+\\{perl-doc-mode-map}"
   :interactive nil
   (setq buffer-auto-save-file-name nil)
   (buffer-disable-undo)
   (auto-fill-mode -1)
   (add-hook 'window-size-change-functions #'perl-doc--auto-refresh nil t)
   (set-buffer-modified-p nil)
-  (setq-local imenu-prev-index-position-function
-	      #'perl-doc--prev-index-position)
-  (setq-local imenu-extract-index-name-function
-	      #'perl-doc--extract-index-name)
-  )
+  ;; Creating the index only works with shr faces which have been
+  ;; added in Emacs 28
+  (when (facep 'shr-h1)
+    (setq-local imenu-prev-index-position-function
+		#'perl-doc--prev-index-position)
+    (setq-local imenu-extract-index-name-function
+		#'perl-doc--extract-index-name)))
   
 (defun perl-doc-goto-section (section)
   "Find SECTION in the current buffer.
@@ -180,6 +185,7 @@ which seem to work, at least, with some formatters."
 	 (quoted    (concat { q { bs bs or bs q or "[^\"]" } "*" q } ))
 	 (plain     (concat { "[^|/<>]" } ))
 	 (extended  (concat { "[^|/]" } ))
+	 (unrestricted ".+?")
 	 (nomarkup  (concat { "[^A-Z]<" } ))
 	 (no-del    (concat { bs "|" or bs "/" or "[^|/]" } ))
 	 (m2	(concat { "[A-Z]<<" ws no-del "+?" ws ">>" } ))
@@ -206,13 +212,13 @@ which seem to work, at least, with some formatters."
 			(concat {1 extended "+?" } )
 		      (concat {1 component "+?" } )))
 	     (section (if allow-angle
-			  (concat {3 quoted or extended "+?" } )
+			  (concat {3 quoted or unrestricted } )
 			(concat {3 quoted or component "+" } )))
 	     (terminator (if allow-angle
 			     (concat " " (make-string terminator-length ?>))
 			   ">"))
 	     (link-re   (concat "\\="
-				{ { text "|" } "?"
+				{ { text "|" ws "?" } "?"
 				  {
 				    { name { "/" section } "?" }
 				    or url or old-sect
@@ -228,9 +234,10 @@ which seem to work, at least, with some formatters."
 	  ;; element is really, really bad, or the regexp isn't
 	  ;; complicated enough.  Since the consequences are rather
 	  ;; harmless, don't raise an error.
-	  (message "perl-doc: Unexpected string: %s"
-		   (buffer-substring (line-beginning-position)
-				     (line-end-position))))
+	  (when perl-doc--debug
+	    (message "perl-doc: Unexpected string: %s"
+		     (buffer-substring (line-beginning-position)
+				       (line-end-position)))))
 	 ((string= (match-string 2) "")
 	  ;; L<Some text|/anchor> or L</anchor> -> don't touch
 	  nil)
@@ -303,13 +310,13 @@ which seem to work, at least, with some formatters."
 Does better formatting than man pages, including hyperlinks."
   (interactive
    (let* ((default (cperl-word-at-point))
-	 (read (read-string
-		(perl-doc--format-prompt "Find doc for Perl topic" default))))
+	  (read (read-string
+		 (perl-doc--format-prompt "Find doc for Perl topic" default))))
      (list (if (equal read "")
-	      default
-	    read))))
-  (require 'shr)
+	       default
+	     read))))
   (let* ((case-fold-search nil)
+	 (is-variable (string-match (rx line-start (in "$@%")) word))
 	 (is-func (and
 		   (string-match "^\\(-[A-Za-z]\\|[a-z]+\\)$" word)
 		   (string-match (concat "^" word "\\>")
@@ -327,10 +334,14 @@ Does better formatting than man pages, including hyperlinks."
 	;; permanent for inspection in the pod- and html-phase.
 	;; (with-current-buffer (get-buffer-create (concat "**pod-" word "**"))
 	;; Fetch plain POD into a temporary buffer
-	(when (< 0 (if is-func
-		       (call-process perl-doc-perldoc-program nil t t "-u" "-f" word)
-		     (call-process perl-doc-perldoc-program nil t t "-u" word)))
-	  (error (buffer-string)))
+	(when (< 0 (cond
+		    (is-variable
+		     (call-process perl-doc-perldoc-program nil t t "-u" "-v" word))
+		    (is-func
+		     (call-process perl-doc-perldoc-program nil t t "-u" "-f" word))
+		    (t
+		     (call-process perl-doc-perldoc-program nil t t "-u" word))))
+	  (error "%s" (buffer-string)))
 	(perl-doc--process-links)
 	(shell-command-on-region (point-min) (point-max)
 				 (concat perl-doc-pod2html-program
@@ -354,9 +365,13 @@ Does better formatting than man pages, including hyperlinks."
     (when section
       (perl-doc-goto-section section))
     (setq-local revert-buffer-function #'perl-doc--refresh
-		perl-doc-base (if is-func "perlfunc" nil)
+		perl-doc-base (if is-func "perlfunc"
+				(if is-variable "perlvar" nil))
 		perl-doc-current-word word
 		perl-doc-current-section section)))
+
+;; Make elint-current-buffer happy
+(defvar text-scale-mode-amount)		; in face-remap.el, which we require
 
 (defun perl-doc--refresh (&optional _ignore-auto _noconfirm)
   "Refresh the current piece of documentation."
@@ -483,13 +498,14 @@ Return nil if the list contains no face marking a heading."
   "Check whether we GOT a heading value in the face we found.
 We don't care which heading, therefore the expected value (first
  in the parameter list) is ignored."
-  (let ((level (perl-doc--faces-heading-level (ensure-list got))))
+  (let ((level (perl-doc--faces-heading-level
+		(if (listp got) got (list got)))))
     (and level (string-match (rx digit) level))
     ))
 
 (defun perl-doc--heading-face-end-p (expected got)
   "Find the first character where the face EXPECTED is not in GOT."
-  (not (member expected (ensure-list got))))
+  (not (member expected (if (listp got) got (list got)))))
  
 (provide 'perl-doc)
 ;;; perldoc.el ends here
