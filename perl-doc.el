@@ -124,6 +124,7 @@ The following key bindings are currently in effect in the buffer:
   (auto-fill-mode -1)
   (add-hook 'window-size-change-functions #'perl-doc--auto-refresh nil t)
   (set-buffer-modified-p nil)
+  (setq-local bidi-paragraph-direction 'left-to-right)
   ;; Creating the index only works with shr faces which have been
   ;; added in Emacs 28
   (when (facep 'shr-h1)
@@ -183,9 +184,9 @@ which seem to work, at least, with some formatters."
 	 (q  "\"")
 	 (ws	(concat { "[[:blank:]]" or "\n" } ))
 	 (quoted    (concat { q { bs bs or bs q or "[^\"]" } "*" q } ))
-	 (plain     (concat { "[^|/<>]" } ))
+	 (plain     (concat { "[^|<>]" } ))
 	 (extended  (concat { "[^|/]" } ))
-	 (unrestricted ".+?")
+	 (unrestricted "[^/].*?")
 	 (nomarkup  (concat { "[^A-Z]<" } ))
 	 (no-del    (concat { bs "|" or bs "/" or "[^|/]" } ))
 	 (m2	(concat { "[A-Z]<<" ws no-del "+?" ws ">>" } ))
@@ -219,9 +220,10 @@ which seem to work, at least, with some formatters."
 			   ">"))
 	     (link-re   (concat "\\="
 				{ { text "|" ws "?" } "?"
-				  {
-				    { name { "/" section } "?" }
-				    or url or old-sect
+				{
+				    url or
+				    { name { "/" section } "?" } or
+				    old-sect
 				  }
 				}))
 	     (re	(concat link-re terminator))
@@ -410,7 +412,7 @@ browse-url."
     (when url
       (cond
        ((string-match (concat "^perldoc:///"	; our scheme
-				"\\(?:\\(?1:.*\\)"   ; 1: page, may be empty
+				"\\(?:\\(?1:[^/]*\\)"   ; 1: page, may be empty
 				"\\(?:#\\|/\\)"      ; section separator
 				"\\(?2:.+\\)" ; "/" + 2: nonzero section
 				"\\|"		; or
@@ -420,8 +422,9 @@ browse-url."
 	(let ((page   (match-string 1 url))
 	      (section (match-string 2 url)))
 	  (if (> (length page) 0)
-	      (if (null (string-match "([1-9])$" page))
-		  (perl-doc page section))
+	      (if (string-match "([1-9])$" page)
+		  (man page)
+		(perl-doc page section))
 	    (when section
 	      (perl-doc-goto-section section)))))
        ((string-match "^#\\(.+\\)" url)
@@ -450,14 +453,16 @@ browse-url."
 	  (text-property-search-forward 'face
 					t ; Any heading will do
 					#'perl-doc--heading-face-p))
-    (setq from (prop-match-beginning heading-start-match))
-    (setq heading-end-match
-	  (text-property-search-forward 'face
-					perl-doc--heading-face
-					#'perl-doc--heading-face-end-p))
-    (setq to (prop-match-beginning heading-end-match))
-    (buffer-substring-no-properties from to)
-    ))
+    (when heading-start-match
+      (setq from (prop-match-beginning heading-start-match))
+      (setq heading-end-match
+	    (text-property-search-forward 'face
+					  perl-doc--heading-face
+					  #'perl-doc--heading-face-end-p))
+      (when heading-end-match
+	(setq to (prop-match-beginning heading-end-match))
+	(buffer-substring-no-properties from to))
+    )))
 
 (defun perl-doc--prev-index-position ()
   "Find the previous index position.
@@ -473,9 +478,10 @@ To be used as `imenu-prev-index-position-function'."
 	    (text-property-search-backward 'face
 					   perl-doc--heading-face
 					   #'perl-doc--heading-face-end-p))
-      (goto-char (prop-match-end heading-start-match))
-      (skip-syntax-forward "-")		; sometimes from points to NL
-      (point)
+      (when heading-start-match
+	(goto-char (prop-match-end heading-start-match))
+	(skip-syntax-forward "-")	; sometimes from points to NL
+	(point))
       )))
 
 (defun perl-doc--extract-index-name ()
