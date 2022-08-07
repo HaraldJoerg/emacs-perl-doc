@@ -1,6 +1,6 @@
 ;;; perl-doc.el --- Read Perl documentation -*- lexical-binding: t -*-
 
-;; Copyright (C) 2022 Harald Jörg
+;; Copyright (C) 2022  Free Software Foundation, Inc.
 
 ;; Author: Harald Jörg <haj@posteo.de>
 ;; Maintainer: Harald Jörg <haj@posteo.de>
@@ -109,8 +109,8 @@ This is only relevant for developers, not for users.")
     (set-keymap-parent map
       (make-composed-keymap button-buffer-map special-mode-map))
     (define-key map [follow-link] 'mouse-face)
-    (define-key map [mouse-2] 'perl-doc-browse-url)
-    (define-key map "\r" 'perl-doc-browse-url)
+    (define-key map [mouse-2] #'perl-doc-browse-url)
+    (define-key map "\r" #'perl-doc-browse-url)
     map)
   "A keymap to allow following links in perldoc buffers.")
 
@@ -307,6 +307,7 @@ which seem to work, at least, with some formatters."
 (defvar-local perl-doc-current-section nil)
 (defvar-local perl-doc-text-scale nil)
 
+;;;###autoload
 (defun perl-doc (word &optional section)
   "Get Perl documentation like the perldoc command.
 Does better formatting than man pages, including hyperlinks."
@@ -514,4 +515,4 @@ We don't care which heading, therefore the expected value (first
   (not (member expected (if (listp got) got (list got)))))
  
 (provide 'perl-doc)
-;;; perldoc.el ends here
+;;; perl-doc.el ends here
