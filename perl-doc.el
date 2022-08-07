@@ -5,14 +5,12 @@
 ;; Author: Harald Jörg <haj@posteo.de>
 ;; Maintainer: Harald Jörg <haj@posteo.de>
 ;; Created: 2022
-;; Version: 0.1
+;; Version: 0.2
 
 ;; Keywords: languages
-;; URL: https://github.com/HaraldJoerg/perl-doc
+;; URL: https://github.com/HaraldJoerg/emacs-perl-doc
 
 ;; Package-Requires: ((emacs "27"))
-
-;; This file is not part of GNU Emacs.
 
 ;; This file is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published

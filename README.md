@@ -32,15 +32,11 @@ The user visible benefits over the other formats are:
 
 ## Installation and Configuration
 
-This library works with Emacs 28.  More precise, it requires
-cperl-mode.el from Emacs 28 which is available from the Emacs
-repository:
-[cperl-mode.el](https://git.savannah.gnu.org/cgit/emacs.git/plain/lisp/progmodes/cperl-mode.el),
-and Emacs 27.
+This library is available under the name perl-doc
+from [GNU ELPA](https://elpa.gnu.org/packages/) 
+and works with Emacs 27 and newer.  Indexing with imenu can
+be used with Emacs 28 and newer.
 
-The file perl-doc.el is not (yet) available from any Emacs package
-repository.  You can store it somewhere on the 'load-path' of your
-Emacs.
 
 The file comes with two customization items
 `perl-doc-pod2html-program` and `perl-doc-perldoc-program` which point
