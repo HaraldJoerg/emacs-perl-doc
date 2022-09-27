@@ -19,7 +19,7 @@ renderer" shr.
 
 Perl documentation is written in a markup format called POD ([Plain
 Old Documentation](https://perldoc.perl.org/perlpod) and is usually
-converted to other formats for human consumption.  The documentation
+converted to other formats for reading by humans.  The documentation
 used to be available in Emacs for a long time in 'info' or 'man'
 format.  However, Perl does no longer ship 'info' files, and the
 software available from CPAN never did.  'man' is not available on all
