@@ -1,0 +1,30 @@
+2022-09-27  Harald Jörg  <haj@posteo.de>
+
+	* NEWS: New file, loosely following Emacs conventions.
+
+	* README.md: Add the commands available in this package.
+
+2022-09-26  Harald Jörg  <haj@posteo.de>
+
+	* perl-doc.el: The home-grown compact regex construction set has
+	been replaced by rx notation.  This is less compact, but easier to
+	maintain (I hope).
+	(perl-doc-mode-map): New key "v" to invoke `perl-doc-view-source'.
+	(perl-doc-goto-section): Bugfix: Sections with regexp
+	metacharacters in their titles are now found.
+	(perl-doc-with-L-grammar): New macro to run elisp code with a
+	lexical definition for the L<...> element of POD syntax in rx
+	notation.
+	(perl-doc--process-links): Eliminate the definition of string
+	regexps in favor of rx notation (which is factored out to the
+	macro `perl-doc-with-L-grammar').
+	(perl-doc-file): New command to run `perl-doc' with completion for
+	a file name.
+	(perl-doc-view-source): New command to view the POD source for the
+	documentation in the current buffer.
+
+	* test/perl-doc-tests.el: Some tests for perl-doc.el, in
+	particular for the regular expressions used.
+
+	* .elpaignore: New file, exclude tests from the package
+

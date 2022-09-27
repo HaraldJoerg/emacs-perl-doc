@@ -1,12 +1,19 @@
 # emacs-perl-doc
 Read nicely rendered Perl documentation in Emacs
 
-This file contains a command to read Perl documentation in Emacs.
+This file contains commands to read Perl documentation in Emacs.
 It uses two external commands which come with Perl: `perldoc` to
 locate the Perl documentation for the Perl modules installed on
 your system, and `pod2html` to format the documentation to HTML.
 This HTML version is then displayed using Emacs' "simple HTML
 renderer" shr.
+
+  * `perl-doc`: Read perl documentation, prompt for topic.  You can
+    give perldoc sections (e.g. "perldebug"), names of modules
+    installed on your system, but also functions and variable names.
+  * `perl-doc-file`: Like `perl-doc`, but prompts for a file name.
+  * `perl-doc-view-source`: View the POD source for the documentation
+    in the current buffer.
 
 ## Motivation
 
@@ -36,7 +43,6 @@ This library is available under the name perl-doc
 from [GNU ELPA](https://elpa.gnu.org/packages/) 
 and works with Emacs 27 and newer.  Indexing with imenu can
 be used with Emacs 28 and newer.
-
 
 The file comes with two customization items
 `perl-doc-pod2html-program` and `perl-doc-perldoc-program` which point

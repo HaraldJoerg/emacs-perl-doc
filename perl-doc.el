@@ -19,7 +19,7 @@
 
 ;; This file is distributed in the hope that it will be useful, but
 ;; WITHOUT ANY WARRANTY; without even the implied warranty of
-;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the GNU
 ;; General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
@@ -59,12 +59,6 @@
 ;;
 ;;  * Makes use of Emacs faces: variable-pitch font for text,
 ;;    fixed-pitch for code, italics for, well, italics
-;;
-;; TODO list
-;;
-;;  * The regex mechanism in `perl-doc--process-links` is a hack.  The
-;;    author wrote this before he learned about rx and always meant to
-;;    rewrite it in rx notation, but well, tuits.
 
 ;;; Code:
 
@@ -78,7 +72,7 @@
 
 ;; We use some features from cperl-mode:
 ;;  * cperl-word-at-point  : Finding Perl syntax elements
-;;  * cperl-short-docs     : Tell functions from modules (for use with -f)
+;;  * cperl-short-docs	   : Tell functions from modules (for use with -f)
 
 (require 'cperl-mode)
 (require 'shr)
@@ -99,16 +93,17 @@
 This is only relevant for developers, not for users.")
 
 ;; Make elint-current-buffer happy
-(defvar button-buffer-map) 		; in button.el
+(defvar button-buffer-map)		; in button.el
 (defvar special-mode-map)		; in simple.el
 
 (defvar perl-doc-mode-map
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map
-      (make-composed-keymap button-buffer-map special-mode-map))
+    (set-keymap-parent
+     map (make-composed-keymap button-buffer-map special-mode-map))
     (define-key map [follow-link] 'mouse-face)
     (define-key map [mouse-2] #'perl-doc-browse-url)
     (define-key map "\r" #'perl-doc-browse-url)
+    (define-key map "v" #'perl-doc-view-source)
     map)
   "A keymap to allow following links in perldoc buffers.")
 
@@ -130,7 +125,7 @@ The following key bindings are currently in effect in the buffer:
 		#'perl-doc--prev-index-position)
     (setq-local imenu-extract-index-name-function
 		#'perl-doc--extract-index-name)))
-  
+
 (defun perl-doc-goto-section (section)
   "Find SECTION in the current buffer.
 There is no precise indicator for SECTION in shr-generated
@@ -140,20 +135,104 @@ no clear specification what makes a section."
   (goto-char (point-min))
   ;; Here's a workaround for a misunderstanding between pod2html and
   ;; shr: pod2html converts a section like "/__SUB__" to a fragment
-  ;; "#SUB__".  The shr renderer doesn't pick id elements in its
+  ;; "#SUB__".	The shr renderer doesn't pick id elements in its
   ;; character properties, so we need to sloppily allow leading "__"
   ;; before looking for the text of the heading.
-  (let ((target-re (replace-regexp-in-string "-" "." section))
+  (let ((target-re (replace-regexp-in-string "-" "." (regexp-quote section)))
 	(prefix "^\\(__\\)?")
 	(suffix "\\([[:blank:]]\\|$\\)"))
     (if (re-search-forward (concat prefix target-re suffix) nil t)
 	(goto-char (line-beginning-position))
       (message "Warning: No section '%s' found." section))))
 
+(defmacro perl-doc-with-L-grammar (&rest body)
+  "Execute BODY with rx extensions for POD's L<...> element.
+In Perl's documentation format POD, the link element L<...>
+is the most complex.  This macro defines syntactic components
+which allow to process these elements with some confidence."
+  `(rx-let
+       ((backslash ?\\)
+	(double-quote ?\")
+	(escaped (char) (sequence backslash char))
+	(quoted (sequence double-quote
+			  (zero-or-more
+			   (or
+			    (escaped backslash)
+			    (escaped double-quote)
+			    (not double-quote)))
+			  double-quote))
+	(plain (not (any "|<>")))	; no link nor markup special chars
+	(extended (not (any "|/")))	; markup is ok, separators are not ok
+	(unrestricted (seq (not ?/) (* any))) ; not starting with a slash
+	(not-markup (seq (not (any "A-Z")) "<")) ; A "harmless" less-than char
+	(not-delimiter (or (escaped "|") (escaped "/") (not (any "|/"))))
+	(markup-start  (sequence (in "A-Z") "<"))
+	(link-start    (sequence "L<" (optional (group-n 1 (1+ "<") " "))))
+	(simple-markup (sequence
+			markup-start
+			(+? (or
+			     (not (any "<>|/"))
+			     not-markup))
+			">"))
+	(extended-markup (sequence
+			  (in "A-Z") "<<" space ; opening phrase
+			  ;; Delimiters are forbidden in links,
+			  ;; allowed elsewhwere.  We can ignore
+			  ;; this since we only treat links here)
+			  (+? not-delimiter)
+			  space ">>")) ; ending phrase
+	(markup			  ; We allow _one_ level of nesting
+	 (or extended-markup
+	     (sequence markup-start
+		       (+? (or extended-markup
+			       simple-markup
+			       not-markup
+			       (not (any "|/>"))))
+		       ">")))
+	;; Now these are the things we're actually after: The parts
+	;; that make a L<name|url> link.  We expect either an URL
+	;; or a name for the target.
+	(component (or plain markup not-markup))
+	(name (group-n 2 (zero-or-more
+			  (or (not (any " \"\t|/<>"))
+			      markup))))
+	(url (group-n 2 (sequence (one-or-more alpha) ; protocol
+				  ":/"
+				  (one-or-more (not (any " |<>"))))))
+	;; old-style references to a section in the same page.
+	;; This style is deprecated, but found in the wild.  We are
+	;; following the recommended heuristic from perlpodspec:
+	;;    .... if it contains any whitespace, it's a section.
+	;; We also found quoted things to be sections.
+	(old-section
+	 (group-n 2
+		  (or (sequence (1+ component) blank (1+ component))
+		      quoted)))
+	(text-simple (group-n 1 (+? component)))
+	(section-simple (group-n 3 (or quoted (+ component))))
+	(link-re-simple (sequence
+			 point
+			 (? (sequence text-simple "|" (? space)))
+			 (or url
+			     (sequence name (? (sequence "/" section-simple)))
+			     old-section)
+			 ">"))
+	(text-extended (group-n 1 (+? extended)))
+	(section-extended (group-n 3 (or quoted unrestricted)))
+	(link-re-extended (sequence
+			   point
+			   (? (or text-extended (? space)))
+			   (or url
+			       (sequence name (? (sequence "/" section-extended)))
+			       old-section)
+			   ))
+	)
+     ,@body))
+
 (defun perl-doc--process-links ()
   "Find the next link in a POD section, and process it.
 The L<...> syntax is the most complex markup in the POD family of
-strange things.  Also, quite a lot of modules on CPAN and
+strange things.	 Also, quite a lot of modules on CPAN and
 elsewhere found ways to violate the spec in interesting ways
 which seem to work, at least, with some formatters."
   ;; Note: Processing links can't be done with syntax tables by using
@@ -161,6 +240,9 @@ which seem to work, at least, with some formatters."
   ;; symbols.  So do it the hard way....
   (goto-char (point-min))
   ;; Links, in general, have three components: L<text|name/section>.
+  ;; "text" is what POD readers should display. "name" is the link target
+  ;; (a POD file or a Perl module), and "section" is an anchor within
+  ;; the link target.
   ;; In the following we match and capture like this:
   ;; - (match-string 1) to text, which is optional
   ;; - (match-string 2) to name, which is mandatory but may be empty
@@ -171,134 +253,87 @@ which seem to work, at least, with some formatters."
   ;; (because we've seen such things in the wild), but only with
   ;; single <> delimiters.  For the link element as a whole,
   ;; L<<< stuff >>> is supported.
-  ;; By the way: Are you tired of backslasheritis?  Well, I am.
-  (let* (({  "\\(?:")
-	 ({1 "\\(?1:")
-	 ({2 "\\(?2:")
-	 ({3 "\\(?3:")
-	 (}  "\\)")
-	 (or "\\|")
-	 (bs "\\\\")
-	 (q  "\"")
-	 (ws	(concat { "[[:blank:]]" or "\n" } ))
-	 (quoted    (concat { q { bs bs or bs q or "[^\"]" } "*" q } ))
-	 (plain     (concat { "[^|<>]" } ))
-	 (extended  (concat { "[^|/]" } ))
-	 (unrestricted "[^/].*?")
-	 (nomarkup  (concat { "[^A-Z]<" } ))
-	 (no-del    (concat { bs "|" or bs "/" or "[^|/]" } ))
-	 (m2	(concat { "[A-Z]<<" ws no-del "+?" ws ">>" } ))
-	 (m0	(concat { "[A-Z]<" { "[^<>|/]" or nomarkup } "+?>" } ))
-	 (markup    (concat { m2 or "[A-Z]<"
-			    { m2 or m0 or nomarkup or "[^|/>]" }
-			    "+?>" } ))
-	 (component (concat { plain or markup or nomarkup } ))
-	 (name      (concat {2 { "[^ \"\t|/<>]" or markup } "*" } ))
-	 (url       (concat {2 "\\w+:/[^ |<>]+" } ))
-	 ;; old-style references to a section in the same page.
-	 ;; This style is deprecated, but found in the wild.  We are
-	 ;; following the recommended heuristic from perlpodspec:
-	 ;;    .... if it contains any whitespace, it's a section.
-	 ;; We also found quoted things to be sections.
-	 (old-sect  (concat {2 { component "+ " component "+" }
-			    or quoted
-			    }  )))
-    (while (re-search-forward (rx "L<" (optional (group-n 1 (1+ "<") " ")))
-			      nil t)
-      (let* ((terminator-length (length (match-string 1)))
-	     (allow-angle (> terminator-length 0)); L<< ... >>
-	     (text  (if allow-angle
-			(concat {1 extended "+?" } )
-		      (concat {1 component "+?" } )))
-	     (section (if allow-angle
-			  (concat {3 quoted or unrestricted } )
-			(concat {3 quoted or component "+" } )))
-	     (terminator (if allow-angle
-			     (concat " " (make-string terminator-length ?>))
-			   ">"))
-	     (link-re   (concat "\\="
-				{ { text "|" ws "?" } "?"
-				{
-				    url or
-				    { name { "/" section } "?" } or
-				    old-sect
-				  }
-				}))
-	     (re	(concat link-re terminator))
-	     (end-marker (make-marker)))
-	(re-search-forward re nil t)
-	(set-marker end-marker (match-end 0))
-	(cond
-	 ((null (match-string 2))
-	  ;; This means that the regexp failed.  Either the L<...>
-	  ;; element is really, really bad, or the regexp isn't
-	  ;; complicated enough.  Since the consequences are rather
-	  ;; harmless, don't raise an error.
-	  (when perl-doc--debug
-	    (message "perl-doc: Unexpected string: %s"
-		     (buffer-substring (line-beginning-position)
-				       (line-end-position)))))
-	 ((string= (match-string 2) "")
-	  ;; L<Some text|/anchor> or L</anchor> -> don't touch
-	  nil)
-	 ((save-match-data
-	    (string-match "^\\w+:/" (match-string 2)))
-	  ;; L<https://www.perl.org/> -> don't touch
-	  nil)
-	 ((save-match-data
-	    (string-match " " (match-string 2)))
-	  ;; L<SEE ALSO> -> L<SEE ALSO|/"SEE ALSO">, fix old style section
-	  (goto-char (match-end 2))
-	  (insert "\"")
-	  (goto-char (match-beginning 2))
-	  (insert (concat (match-string 2) "|/\"")))
-	 ((save-match-data
-	    (and (match-string 1) (string-match quoted (match-string 2))))
-	  ;; L<unlink1|"unlink1"> -> L<unlink1|/"unlink1">, as seen in File::Temp
-	  (goto-char (match-beginning 2))
-	  (insert "/"))
-	 ((save-match-data
-	    (string-match quoted (match-string 2)))
-	  ;; L<"safe_level"> -> L<safe_level|/"safe_level">, as seen in File::Temp
-	  (goto-char (match-beginning 2))
-	  (insert (concat (substring (match-string 2) 1 -1) "|/")))
-	 ((match-string 3)
-	  ;; L<Some text|page/sect> -> L<Some text|perldoc:///page/sect>
-	  ;; L<page/section> -> L<page/section|perldoc:///page/section>
-	  ;; In both cases:
-	  ;; Work around a bug in pod2html as of 2020-07-27: It
-	  ;; doesn't grok spaces in the "section" part, though they
-	  ;; are perfectly valid.  Also, it retains quotes around
-	  ;; sections which it removes for links to local sections.
-	  (let ((section (match-string 3))
-		(text (if (match-string 1) ""
-			(concat (match-string 3)
-				" in "
-				(match-string 2) "|"))))
-	      (save-match-data
-		(setq section (replace-regexp-in-string "\"" "" section))
-		(setq section (replace-regexp-in-string " " "-" section)))
-	      (goto-char (match-beginning 3))
-	      (delete-char (- (match-end 3) (match-beginning 3)))
-	      (insert section)
-	      (goto-char (match-beginning 2))
-	      (insert text)
-	      (insert "perldoc:///")))
-	 ((match-string 1) ; but without section
-	  ;; L<Some text|page> -> L<Some text|perldoc:///page>
-	  (goto-char (match-beginning 2))
-	  (insert "perldoc:///"))
-	 ;; ((match-string 3)
-	 ;;  ;; L<page/section> -> L<page/section|perldoc:///page/section>
-	 ;;  ;; Work around a bug in pod2html as of 2020-07-27, see above
-	 ;;  (goto-char (match-beginning 2))
-	 ;;  (insert (concat (match-string 3) " in " (match-string 2)
-	 ;;		  "|" "perldoc:///")))
-	 (t
-	  ;; L<page> -> L<page|perldoc:///page>
-	  (goto-char (match-beginning 2))
-	  (insert (concat (match-string 2) "|" "perldoc:///"))))
-	(goto-char (marker-position end-marker))))))
+  (perl-doc-with-L-grammar
+   (while (re-search-forward (rx link-start) nil t)
+     (let* ((terminator-length (length (match-string 1)))
+	    (allow-angle (> terminator-length 0)); L<< ... >>
+	    (re (if allow-angle (concat (rx link-re-extended)
+					(make-string terminator-length ?>))
+		  (rx link-re-simple)))
+	    (end-marker (make-marker)))
+       (re-search-forward re nil t)
+       (set-marker end-marker (match-end 0))
+       (cond
+	((null (match-string 2))
+	 ;; This means that the regexp failed.	Either the L<...>
+	 ;; element is really, really bad, or the regexp isn't
+	 ;; complicated enough.	 Since the consequences are rather
+	 ;; harmless, don't raise an error.
+	 (when perl-doc--debug
+	   (message "perl-doc: Unexpected string: %s"
+		    (buffer-substring (line-beginning-position)
+				      (line-end-position)))))
+	((string= (match-string 2) "")
+	 ;; L<Some text|/anchor> or L</anchor> -> don't touch
+	 nil)
+	((save-match-data
+	   (string-match "^\\w+:/" (match-string 2)))
+	 ;; L<https://www.perl.org/> -> don't touch
+	 nil)
+	((save-match-data
+	   (string-match " " (match-string 2)))
+	 ;; L<SEE ALSO> -> L<SEE ALSO|/"SEE ALSO">, fix old style section
+	 (goto-char (match-end 2))
+	 (insert "\"")
+	 (goto-char (match-beginning 2))
+	 (insert (concat (match-string 2) "|/\"")))
+	((save-match-data
+	   (and (match-string 1) (string-match (rx quoted) (match-string 2))))
+	 ;; L<unlink1|"unlink1"> -> L<unlink1|/"unlink1">, as seen in File::Temp
+	 (goto-char (match-beginning 2))
+	 (insert "/"))
+	((save-match-data
+	   (string-match (rx quoted) (match-string 2)))
+	 ;; L<"safe_level"> -> L<safe_level|/"safe_level">, as seen in File::Temp
+	 (goto-char (match-beginning 2))
+	 (insert (concat (substring (match-string 2) 1 -1) "|/")))
+	((match-string 3)
+	 ;; L<Some text|page/sect> -> L<Some text|perldoc:///page/sect>
+	 ;; L<page/section> -> L<page/section|perldoc:///page/section>
+	 ;; In both cases:
+	 ;; Work around a bug in pod2html as of 2020-07-27: It
+	 ;; doesn't grok spaces in the "section" part, though they
+	 ;; are perfectly valid.  Also, it retains quotes around
+	 ;; sections which it removes for links to local sections.
+	 (let ((section (match-string 3))
+	       (text (if (match-string 1) ""
+		       (concat (match-string 3)
+			       " in "
+			       (match-string 2) "|"))))
+	   (save-match-data
+	     (setq section (replace-regexp-in-string "\"" "" section))
+	     (setq section (replace-regexp-in-string " " "-" section)))
+	   (goto-char (match-beginning 3))
+	   (delete-char (- (match-end 3) (match-beginning 3)))
+	   (insert section)
+	   (goto-char (match-beginning 2))
+	   (insert text)
+	   (insert "perldoc:///")))
+	((match-string 1) ; but without section
+	 ;; L<Some text|page> -> L<Some text|perldoc:///page>
+	 (goto-char (match-beginning 2))
+	 (insert "perldoc:///"))
+	;; ((match-string 3)
+	;;  ;; L<page/section> -> L<page/section|perldoc:///page/section>
+	;;  ;; Work around a bug in pod2html as of 2020-07-27, see above
+	;;  (goto-char (match-beginning 2))
+	;;  (insert (concat (match-string 3) " in " (match-string 2)
+	;;		  "|" "perldoc:///")))
+	(t
+	 ;; L<page> -> L<page|perldoc:///page>
+	 (goto-char (match-beginning 2))
+	 (insert (concat (match-string 2) "|" "perldoc:///"))))
+       (goto-char (marker-position end-marker))))))
 
 (defvar-local perl-doc-base nil)
 (defvar-local perl-doc-current-word nil)
@@ -331,7 +366,7 @@ Does better formatting than man pages, including hyperlinks."
 	(pop-to-buffer perldoc-buffer)
       (with-temp-buffer
 	;; for diagnostics comment out the previous line, and
-	;; uncomment the next.  This makes the intermediate buffer
+	;; uncomment the next.	This makes the intermediate buffer
 	;; permanent for inspection in the pod- and html-phase.
 	;; (with-current-buffer (get-buffer-create (concat "**pod-" word "**"))
 	;; Fetch plain POD into a temporary buffer
@@ -371,7 +406,16 @@ Does better formatting than man pages, including hyperlinks."
 		perl-doc-current-word word
 		perl-doc-current-section section)))
 
-;; Make elint-current-buffer happy
+;;;###autoload
+(defun perl-doc-file (file)
+  "Run `perl-doc' on FILE.
+This is the same as running `perl-doc' with FILE as an argument,
+but provides file-name completion."
+  (interactive "f")
+  (perl-doc file)
+  )
+
+  ;; Make elint-current-buffer happy
 (defvar text-scale-mode-amount)		; in face-remap.el, which we require
 
 (defun perl-doc--refresh (&optional _ignore-auto _noconfirm)
@@ -397,7 +441,7 @@ Does better formatting than man pages, including hyperlinks."
     (when (timerp perl-doc--window-size-change-timer)
       (cancel-timer perl-doc--window-size-change-timer))
     (setq perl-doc--window-size-change-timer
-          (run-with-idle-timer 1 nil #'perl-doc--refresh))))
+	  (run-with-idle-timer 1 nil #'perl-doc--refresh))))
 
 (defun perl-doc-browse-url ()
   "Browse the URL at point, using either perldoc or `shr-browse-url'.
@@ -411,13 +455,13 @@ browse-url."
     (when url
       (cond
        ((string-match (concat "^perldoc:///"	; our scheme
-				"\\(?:\\(?1:[^/]*\\)"   ; 1: page, may be empty
-				"\\(?:#\\|/\\)"      ; section separator
-				"\\(?2:.+\\)" ; "/" + 2: nonzero section
-				"\\|"		; or
-				"\\(?1:.+\\)\\)$")   ; 1: just a page
-			url)
-	  ;; link to be handled by perl-doc
+			      "\\(?:\\(?1:[^/]*\\)"   ; 1: page, may be empty
+			      "\\(?:#\\|/\\)"	   ; section separator
+			      "\\(?2:.+\\)" ; "/" + 2: nonzero section
+			      "\\|"		; or
+			      "\\(?1:.+\\)\\)$")   ; 1: just a page
+		      url)
+	;; link to be handled by perl-doc
 	(let ((page   (match-string 1 url))
 	      (section (match-string 2 url)))
 	  (if (> (length page) 0)
@@ -430,10 +474,22 @@ browse-url."
 	;; local section created by pod2html
 	(if perl-doc-base
 	    (perl-doc perl-doc-base
-			   (match-string-no-properties 1 url))
-	(perl-doc-goto-section (match-string-no-properties 1 url))))
+		      (match-string-no-properties 1 url))
+	  (perl-doc-goto-section (match-string-no-properties 1 url))))
        (t
 	(shr-browse-url))))))
+
+(defun perl-doc-view-source ()
+  "Visit the file which contains the POD source of the current buffer."
+  (interactive)
+  (let ((word perl-doc-current-word)
+	(pod-source))
+    (with-temp-buffer
+      (call-process perl-doc-perldoc-program nil t t "-l" word)
+      (setq pod-source (buffer-substring (point-min) (1- (point-max))))
+      (view-file pod-source)
+      )
+    ))
 
 ;;; perl-doc-mode Index functions
 
@@ -461,7 +517,7 @@ browse-url."
       (when heading-end-match
 	(setq to (prop-match-beginning heading-end-match))
 	(buffer-substring-no-properties from to))
-    )))
+      )))
 
 (defun perl-doc--prev-index-position ()
   "Find the previous index position.
@@ -511,6 +567,6 @@ We don't care which heading, therefore the expected value (first
 (defun perl-doc--heading-face-end-p (expected got)
   "Find the first character where the face EXPECTED is not in GOT."
   (not (member expected (if (listp got) got (list got)))))
- 
+
 (provide 'perl-doc)
 ;;; perl-doc.el ends here

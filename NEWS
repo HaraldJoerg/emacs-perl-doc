@@ -1,0 +1,38 @@
+perl-doc.el for GNU Emacs NEWS -- history of user-visible changes.
+
+Copyright (C) 2022 Free Software Foundation, Inc.
+See the end of the file for license conditions.
+
+* Changes in perl-doc.el 0.3
+
+** New command `perl-doc-file'
+
+Like `perl-doc', but prompt for a file name with completion.
+
+** New command `perl-doc-view-source'
+
+View the POD source for the Perl documentation shown in the current
+buffer.  The command is bound to "v" in `perl-doc-mode'.
+
+
+
+----------------------------------------------------------------------
+perl-doc.el is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+perl-doc.el is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
+
+
+Local variables:
+coding: utf-8
+mode: outline
+paragraph-separate: "[ 	]*$"
+end:
