@@ -5,7 +5,7 @@
 ;; Author: Harald Jörg <haj@posteo.de>
 ;; Maintainer: Harald Jörg <haj@posteo.de>
 ;; Created: 2022
-;; Version: 0.4
+;; Version: 0.6
 
 ;; Keywords: languages
 ;; URL: https://github.com/HaraldJoerg/emacs-perl-doc
@@ -165,13 +165,12 @@ which allow to process these elements with some confidence."
 	(extended (not (any "|/")))	; markup is ok, separators are not ok
 	(unrestricted (seq (not ?/) (* any))) ; not starting with a slash
 	(not-markup (seq (not (any "A-Z")) "<")) ; A "harmless" less-than char
-	(not-delimiter (or (escaped "|") (escaped "/") (not (any "|/"))))
 	(markup-start  (sequence (in "A-Z") "<"))
 	(link-start    (sequence "L<" (optional (group-n 1 (1+ "<") " "))))
 	(simple-markup (sequence
 			markup-start
 			(+? (or
-			     (not (any "<>|/"))
+			     (not (any "<>/"))
 			     not-markup))
 			">"))
 	(extended-markup (sequence
@@ -179,7 +178,7 @@ which allow to process these elements with some confidence."
 			  ;; Delimiters are forbidden in links,
 			  ;; allowed elsewhwere.  We can ignore
 			  ;; this since we only treat links here)
-			  (+? not-delimiter)
+			  (+? any)
 			  space ">>")) ; ending phrase
 	(markup			  ; We allow _one_ level of nesting
 	 (or extended-markup
@@ -187,7 +186,7 @@ which allow to process these elements with some confidence."
 		       (+? (or extended-markup
 			       simple-markup
 			       not-markup
-			       (not (any "|/>"))))
+			       (not (any "/>"))))
 		       ">")))
 	;; Now these are the things we're actually after: The parts
 	;; that make a L<name|url> link.  We expect either an URL

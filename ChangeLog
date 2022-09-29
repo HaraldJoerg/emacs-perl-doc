@@ -1,3 +1,13 @@
+2022-09-29  Harald Jörg  <haj@posteo.de>
+
+	* perl-doc.el (perl-doc-with-L-grammar): Allow the vertical bar in
+	markup (but not in plain nor extended text)
+
+	* test/perl-doc-tests.el (perl-doc-test-l-grammar): Add testcase
+	for vertical bar in markup.
+	(perl-doc-test-process-links): Add testcase for vertical bar in
+	markup.
+
 2022-09-27  Harald Jörg  <haj@posteo.de>
 
 	* NEWS: New file, loosely following Emacs conventions.

@@ -42,13 +42,15 @@
      (should (string= (match-string 0 string) "\"quoted \\\"part\\\"\\\\\"")))
    (let ((markup-testcases
 	  '(("B<bold> xxx" . "B<bold>")
+	    ("C<|>" . "C<|>")		; seen in perlport
 	    ("I<nestB<ed>>>" . "I<nestB<ed>>")
+	    ("C<< extended with | >>>" . "C<< extended with | >>")
 	    ("C<< extended with > >>>" . "C<< extended with > >>"))))
      (dolist (markup-testcase markup-testcases)
        (let ((string (car markup-testcase))
 	     (match  (cdr markup-testcase)))
-       (string-match (rx markup) string)
-       (should (string= (match-string 0 string) match)))))))
+	 (should (string-match (rx markup) string))
+	 (should (string= (match-string 0 string) match)))))))
 
 (ert-deftest perl-doc-test-process-links ()
   "Test various ways to write POD \"L<...>\" elements.
@@ -72,6 +74,8 @@ The L markup is the weirdest of all POD elements, here are some
 	   ("L<fopen(3)>" . "L<fopen(3)|perldoc:///fopen(3)>")
 	   ("L<pi/Files and I/O>" .	; in perlfunc.pod
 	    "L<Files and I/O in pi|perldoc:///pi/Files-and-I/O>")
+	   ("L<C<^>, C<&> and C<|>|perlop/Bitwise>" . ; found in perlport
+	    "L<C<^>, C<&> and C<|>|perldoc:///perlop/Bitwise>")
 	   ("L<< Perl-R|https://g.com/orgs/Perl/teams/perl-r >>" .
 	    "L<< Perl-R|https://g.com/orgs/Perl/teams/perl-r >>")))
 	 (perl-doc--debug t))

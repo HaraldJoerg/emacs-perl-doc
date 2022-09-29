@@ -3,6 +3,11 @@ perl-doc.el for GNU Emacs NEWS -- history of user-visible changes.
 Copyright (C) 2022 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
+* Changes in perl-doc.el 0.6
+
+Bugfix: A vertical bar in markup is now processed correctly (seen in
+perlport.pod).
+
 * Changes in perl-doc.el 0.3
 
 ** New command `perl-doc-file'
