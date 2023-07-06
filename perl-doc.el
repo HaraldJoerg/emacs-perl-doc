@@ -411,8 +411,9 @@ Does better formatting than man pages, including hyperlinks."
 This is the same as running `perl-doc' with FILE as an argument,
 but provides file-name completion."
   (interactive "f")
-  (perl-doc file)
-  )
+  (let ((absolute-path (expand-file-name file)))
+    (setq-local default-directory (file-name-directory absolute-path))
+    (perl-doc absolute-path)))
 
   ;; Make elint-current-buffer happy
 (defvar text-scale-mode-amount)		; in face-remap.el, which we require
