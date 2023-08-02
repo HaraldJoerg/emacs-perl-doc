@@ -1,7 +1,68 @@
 perl-doc.el for GNU Emacs NEWS -- history of user-visible changes.
 
-Copyright (C) 2022 Free Software Foundation, Inc.
+Copyright (C) 2023 Free Software Foundation, Inc.
 See the end of the file for license conditions.
+
+* Changes in perl-doc.el 0.8 - August 2023
+
+** Speedbar Support
+
+perl-doc now has its own display in speedbar.  It is accessible either
+by starting <M-x> speedbar while looking at a buffer in perl-doc-mode
+or by starting <M-x> perl-doc-browser.  In the latter case, which also
+works if emacs is started in a terminal, you can leave perl-doc
+display with the command <M-x> perl-doc-browser-quit (bound to "q" in
+the speedbar frame).
+
+** Completion of module names
+
+The perl-doc command now offers completion for modules which are
+installed on your system (fine print: The modules who are available to
+the Perl executable customized as perl-doc-perl-program).
+
+** New functions
+
+Documentation for builtin functions and variables is now available via
+the new commands perl-doc-function and perl-doc-variable.  They don't
+do completion, though (I have no easily accessible authoritative
+source for the completion candidates).
+
+The commands perl-doc-browser and perl-doc-browser-quit start and
+stop perl-doc view in speedbar.
+
+The command perl-doc-add-lib allows to add an existing directory (with
+completion) for the current session.  To add a directory permanently,
+see the new customization option perl-doc-extra-libs below.
+
+** New customization options
+
+The option perl-doc-perl-program is the file name of the Perl
+executable for which documentation is to be displayed.  perl-doc.el
+runs the one-liner "perl -E 'say for @INC'" to get the list of
+directories where Perl modules (and their documentation) reside.
+
+The option perl-doc-extra-libs allows to add a list of directories, on
+top of the builtin ones and those from PERL5LIB.
+
+** Bugfixes
+
+Refreshing the view doesn't happen quite as often (only if the width
+of the window changes), and if it ever happens, it does no longer kill
+imenu's menubar-index (errors reported by LanX on PerlMonks)
+
+** Known bugs and limitations
+
+The display of Perl documentation is done in a scratch buffer which is
+not associated with a file.  This means that there's no point in
+editing this buffer or saving it.
+
+The error handling could be better.  If a Perl documentation buffer
+shows "No documentation found for Your::Module", then you don't know
+whether the file Your/Module.pm has no POD in it or whether it does
+not exist at all.  In the former case, you can still use "v" to view
+the source of Your/Module.pm (and add some POD, of course), the latter
+should not happen if you let yourself be guided by the module name
+completion.
 
 * Changes in perl-doc.el 0.6
 
