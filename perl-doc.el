@@ -5,7 +5,7 @@
 ;; Author: Harald Jörg <haj@posteo.de>
 ;; Maintainer: Harald Jörg <haj@posteo.de>
 ;; Created: 2022
-;; Version: 0.8
+;; Version: 0.81
 
 ;; Keywords: languages
 ;; URL: https://github.com/HaraldJoerg/emacs-perl-doc
@@ -120,6 +120,13 @@ This is only relevant for developers, not for users.")
 (defvar button-buffer-map)		; in button.el
 (defvar special-mode-map)		; in simple.el
 
+(defun perl-doc--index-available-p ()
+  "Return a non-nil value if an `imenu' index can be built.
+Our current implementation is based on shr, which started to use
+named faces for headings (which we use to build the index) in
+Emacs 28."
+  (facep 'shr-h1))
+
 (defvar perl-doc-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent
@@ -215,7 +222,7 @@ The following key bindings are currently in effect in the buffer:
   (setq-local bidi-paragraph-direction 'left-to-right)
   ;; Creating the index only works with shr faces which have been
   ;; added in Emacs 28
-  (when (facep 'shr-h1)
+  (when (perl-doc--index-available-p)
     (setq-local imenu-create-index-function #'perl-doc-create-imenu-index)))
 
 (defun perl-doc-goto-section (section)
@@ -476,7 +483,6 @@ being a sigil)."
 As a first step, process links in the POD document. Then,
 converted POD to HTML with the external program pod2html, and
 then render that HTML with `shr-render-region'."
-  (perl-doc--process-links)
   (shell-command-on-region (point-min) (point-max)
 			   (concat perl-doc-pod2html-program
 				   " --cachedir="
@@ -550,7 +556,11 @@ Does better formatting than man pages, including hyperlinks."
 		  "Find doc for Perl topic" default)
 		 #'perl-doc--complete-module
 		 nil
-		 #'perl-doc--completion-check-choice
+		 ;; Emacs 29 or newer needed for
+		 ;; REQUIRE-MATCH to be a function
+		 (if (>= emacs-major-version 29)
+		     #'perl-doc--completion-check-choice
+		   nil)
 		 nil
 		 'perl-doc-module-history
 		 default)))
@@ -564,7 +574,7 @@ Does better formatting than man pages, including hyperlinks."
 	   (setq-local perl-doc-base "perlvar")
 	   'perl-variable)
 	  ((and
-	    (string-match "^\\(-[A-Za-z]\\|[a-z]+\\)$" word)
+	    (string-match "^\\(-[A-Za-z]\\|[a-z2]+\\)$" word)
 	    (string-match (concat "^" word "\\>")
 			  (documentation-property
 			   'cperl-short-docs
@@ -722,7 +732,7 @@ browse-url."
 	    (1 (view-file (car file-names)))
 	    (_
 	     (setq pod-source
-		   (completing-read "Select POD source"
+		   (completing-read "Select POD source: "
 				    file-names
 				    nil nil nil nil
 				    (car file-names)))
@@ -846,6 +856,12 @@ speedbar frame."
 	(speedbar-refresh))
     (dframe-close-frame)))
 
+(defun perl-doc--speedbar-view-source ()
+  "View the POD source of the current line in speedbar."
+  (interactive)
+  (let ((perl-doc--current-topic (car (speedbar-line-token))))
+    (perl-doc-view-source)))
+
 (defun perl-doc--install-speedbar-variables ()
   "Do whatever is needed to fire up speedbar for POD files"
   (or perl-doc-speedbar-keymap
@@ -853,6 +869,7 @@ speedbar frame."
 	(define-key map "\C-m" #'perl-doc--speedbar-key-RET)
 	(define-key map "+" #'perl-doc--speedbar-key-+)
 	(define-key map "q" #'perl-doc-quit-browser)
+	(define-key map "v" #'perl-doc--speedbar-view-source)
 	(setq perl-doc-speedbar-keymap map))))
 
 (with-eval-after-load 'speedbar
@@ -903,6 +920,10 @@ speedbar frame."
     ["Contract" speedbar-contract-line
      (save-excursion (beginning-of-line)
 		     (looking-at "[0-9]+: *.-. "))]
+    ["Render POD" perl-doc-speedbar-view-pod
+     (equal (cadr (speedbar-line-token)) 'file)]
+    ["View POD source" perl-doc--speedbar-view-source
+     (equal (cadr (speedbar-line-token)) 'file)]
     )
   "The menu for browsing Perl documentation.")
 
@@ -1109,10 +1130,15 @@ node's namespace."
 (defun perl-doc--insert-file-button (node depth)
   "Insert a button for NODE at the current point, if defined."
   (when node
-    (let ((tag-button (perl-doc--button-label node)))
+    (let ((tag-button (perl-doc--button-label node))
+	  (button-char (if (perl-doc--index-available-p) ?+ ?\ ))
+	  (button-function
+	   (if (perl-doc--index-available-p)
+	       'perl-doc-speedbar-insert-imenu
+	     nil)))
       (speedbar-make-tag-line
-       'bracket ?+			; EXP-BUTTON-TYPE, -CHAR
-       'perl-doc-speedbar-insert-imenu	; EXP-BUTTON-FUNCTION
+       'bracket button-char		; EXP-BUTTON-TYPE, CHAR
+       button-function                	; EXP-BUTTON-FUNCTION
        node				; EXP-BUTTON-DATA
        tag-button			; TAG-BUTTON
        'perl-doc-speedbar-view-pod	; TAG-BUTTON-FUNCTION
@@ -1139,7 +1165,7 @@ already there, nil otherwise."
 	    (and (setq entry-found-p
 		       (search-forward-regexp
 			(rx (group (+ (in "0-9"))) ":" (* " ")
-			    (or (seq (in "[<{") (in "+-") (in "]>}"))
+			    (or (seq (in "[<{") any (in "]>}"))
 				">")
 			    " " (group (+ (not (in "\n")))))
 		  (line-end-position 2) t))
@@ -1148,7 +1174,7 @@ already there, nil otherwise."
 			  (string< (match-string 2) name))))))
     ;; At the bottom there's no more following speedbar line
     (if entry-found-p (beginning-of-line) (forward-line)))
-  (looking-at (concat "\\([0-9]+\\): +[<[{][+-][]>}] " name)))
+  (looking-at (concat "\\([0-9]+\\): +[<[{].[]>}] " name)))
 
 (defun perl-doc--speedbar-insert-topic (topic)
   "Insert TOPIC in the current speedbar display."
@@ -1199,7 +1225,6 @@ already there, nil otherwise."
 	 (with-current-buffer (get-buffer directory)
 	   (eq major-mode 'perl-doc-mode))
 	 (not (equal speedbar-initial-expansion-list-name "perl-doc")))
-    (message "*** Switching to \"perl-doc\" display for \"%s\"" directory)
     ;; That triggers a refresh under "perl-doc" display
     (setq-local speedbar-last-selected-file nil)
     (speedbar-change-initial-expansion-list "perl-doc"))
@@ -1416,7 +1441,7 @@ Return t if the name in NODE is not a known Perl module."
   "View the Perl documentation for the NODE given."
   (let ((name (car node)))
     (perl-doc--common name 'module)
-    (when (string-match "+" button)
+    (when (string-match "\\+" button)
       (speedbar-expand-line))))
 
 ;; Eventually, activate our speedbar support

@@ -74,6 +74,8 @@ The L markup is the weirdest of all POD elements, here are some
 	   ("L<fopen(3)>" . "L<fopen(3)|perldoc:///fopen(3)>")
 	   ("L<pi/Files and I/O>" .	; in perlfunc.pod
 	    "L<Files and I/O in pi|perldoc:///pi/Files-and-I/O>")
+	   ("L<enc/T C<:locale> sp>" . ; in open.pm
+	    "L<T C<:locale> sp in enc|perldoc:///enc/T-C<:locale>-sp>")
 	   ("L<C<^>, C<&> and C<|>|perlop/Bitwise>" . ; found in perlport
 	    "L<C<^>, C<&> and C<|>|perldoc:///perlop/Bitwise>")
 	   ("L<< Perl-R|https://g.com/orgs/Perl/teams/perl-r >>" .
