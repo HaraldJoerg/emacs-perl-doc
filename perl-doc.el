@@ -112,6 +112,23 @@ be used by the Perl interpreter."
   :group 'perl-doc
   :type '(repeat directory))
 
+(defcustom perl-doc-window 'default
+  "Where `perl-doc' displays Perl documentation.
+same-window -- use the current window
+frame       -- use a new frame
+same-frame  -- reuse a frame already showing Perl documentation
+default     -- use the default selection of `pop-to-buffer'.
+Any other value behaves like 'default'.
+With the default setting, `perl-doc' can be customized to any desired
+behavior by using the user options `display-buffer-alist' and
+`display-buffer-base-action'."
+  :group 'perl-doc
+  :type '(radio
+          (const default)
+          (const same-window)
+          (const same-frame)
+          (const frame)))
+
 (defvar perl-doc--debug nil
   "If non-nil, unrecognized POD links are reported to the message buffer.
 This is only relevant for developers, not for users.")
@@ -541,8 +558,23 @@ function or a variable."
 	(setq-local perl-doc-window-width
 		    (window-body-width (selected-window) t))))
   ;; Eventually, show the buffer and store current variables
-  (or noselect
-      (pop-to-buffer perldoc-buffer))))
+    (or noselect
+	(cond
+	 ((equal perl-doc-window 'same-window)
+	  (pop-to-buffer-same-window perldoc-buffer))
+	 ((equal perl-doc-window 'frame)
+	  (pop-to-buffer perldoc-buffer
+			 '((display-buffer-reuse-window
+			    display-buffer-pop-up-frame)
+			   (reusable-frames . visible))))
+	 ((equal perl-doc-window 'same-frame)
+	  (pop-to-buffer perldoc-buffer
+			 '((display-buffer-reuse-window
+			    display-buffer-reuse-mode-window
+			    display-buffer-pop-up-frame)
+			   (mode . perl-doc-mode)
+			   (reusable-frames . 0))))
+	 (t (pop-to-buffer perldoc-buffer))))))
 
 ;;;###autoload
 (defun perl-doc (word &optional section)
@@ -596,7 +628,7 @@ This retrieves the corresponding section from the perlfunc page.
 No completion is done (yet).  Sorry."
   (interactive "MFunction name: ")
   (perl-doc--common topic 'perl-function))
-    
+
 ;;;###autoload
 (defun perl-doc-variable (topic)
   "Get Perl documentation for a builtin function WORD.
@@ -604,7 +636,7 @@ This retrieves the corresponding section from the perlfunc page.
 No completion is done (yet).  Sorry."
   (interactive "MVariable name: ")
   (perl-doc--common topic 'perl-variable))
-    
+
 ;;;###autoload
 (defun perl-doc-file (file)
   "Run `perl-doc' on FILE.
@@ -1189,7 +1221,7 @@ already there, nil otherwise."
      (pcase topic
        ((pred perl-doc--language-documentation-p)
 	"0:<.> Perl Language")
-       ((pred perl-doc--module-documentation-p) 
+       ((pred perl-doc--module-documentation-p)
 	"0:<.> Modules")
        ((pred perl-doc--old-delta-p)
 	"0:<.> Old perldeltas")))

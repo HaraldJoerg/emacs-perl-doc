@@ -1,3 +1,33 @@
+2025-06-04  Harald Jörg  <haj@posteo.de>
+
+	Trial version:
+
+	* perl-doc.el: New user option 'perl-doc-window'
+	to control where perl-doc will display Perl documentation.
+	Requested in https://github.com/HaraldJoerg/emacs-perl-doc/issues/3.
+
+2023-08-05  Harald Jörg  <haj@posteo.de>
+
+	Version 0.81:
+
+	* perl-doc.el (perl-doc--index-available-p): New function to
+	indicate whether we can run imenu.
+	* perl-doc.el (perl-doc--render-pod): Delete run of
+	`perl-doc--process-region'
+	(perl-doc): Make completion work in Emacs 27/28 (Fixes #2)
+	Recognize atan2 as a function (Fixes #1)
+	(perl-doc--speedbar-view-source): New function to view POD sources
+	from the speedbar menu
+	(perl-doc-speedbar-menu-items): Add menu items to view POD and its
+	source to the speedbar context menu
+	(perl-doc--insert-file-button): Don't show a "+" for modules if
+	imenu isn't available
+	* (perl-doc-speedbar-view-pod): Fix an error
+	discovered by relint
+
+	* test/perl-doc-tests.el (perl-doc-test-process-links): Test one
+	more edge case from open.pm
+
 2022-09-29  Harald Jörg  <haj@posteo.de>
 
 	* perl-doc.el (perl-doc-with-L-grammar): Allow the vertical bar in
