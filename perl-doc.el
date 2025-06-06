@@ -5,7 +5,7 @@
 ;; Author: Harald Jörg <haj@posteo.de>
 ;; Maintainer: Harald Jörg <haj@posteo.de>
 ;; Created: 2022
-;; Version: 0.81
+;; Version: 0.82
 
 ;; Keywords: languages
 ;; URL: https://github.com/HaraldJoerg/emacs-perl-doc

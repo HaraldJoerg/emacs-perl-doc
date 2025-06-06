@@ -1,6 +1,10 @@
-2025-06-04  Harald Jörg  <haj@posteo.de>
+2025-06-06  Harald Jörg  <haj@posteo.de>
 
-	Trial version:
+	Version 0.82
+
+	* perl-doc.el: Version bump, no other change.
+
+2025-06-04  Harald Jörg  <haj@posteo.de>
 
 	* perl-doc.el: New user option 'perl-doc-window'
 	to control where perl-doc will display Perl documentation.
